@@ -26,20 +26,22 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 @endlicense
 """
 
-from PyQt5.QtWidgets import *
-from PyQt5.QtCore import *
+#from PyQt6.QtWidgets import *
+#from PyQt6.QtCore import *
+from PySide6.QtWidgets import *
+from PySide6.QtCore import *
 from ui_dafgen import Ui_DAFGen
 
 from pyaudio import PyAudio, paFloat32
 from math import floor
-from time import clock
+from time import perf_counter
 
 import sys
 
 
 class Worker(QThread):
 
-	_trigger = pyqtSignal(float)
+	_trigger = Signal(float)
 
 	def __init__(self, bufferSize, streamIn, streamOut):
 		QThread.__init__(self)
@@ -52,10 +54,10 @@ class Worker(QThread):
 
 	def _genDAF(self):
 		while self._streamIn.is_active():
-			start = clock()
+			start = perf_counter()
 			audioData = self._streamIn.read(self._bufferSize)
 			self._streamOut.write(audioData)
-			actualDelay = clock() - start
+			actualDelay = perf_counter() - start
 			self._trigger.emit(actualDelay)
 
 	def run(self):
@@ -134,7 +136,7 @@ def main():
 	app = QApplication(sys.argv)
 	win = MainApp()
 	win.show()
-	sys.exit(app.exec_())
+	sys.exit(app.exec())
 
 
 if __name__ == '__main__':
