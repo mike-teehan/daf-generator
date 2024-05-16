@@ -2,7 +2,7 @@
 Simple DAF (***D**elayed **A**uditory **F**eedback*) generator aimed at reducing stuttering.
 
 ## Screenshot
-![Screenshot-1](https://user-images.githubusercontent.com/23141800/35464372-9d59553e-0306-11e8-945c-26535601f002.png)
+![Screenshot](screenshot.png?raw=true)
 
 ## Background
 What's this all about:
@@ -11,23 +11,43 @@ What's this all about:
   * [На волнах эффекта Ли: Питонизируем генерацию DAF / Хабр](https://habr.com/post/347580/)
 
 ## Building and requirements
-DAF Gen is created via PyQt5 framework and uses the PyAudio module for voice recording. All the necessary PIP dependencies are listed in *requirements.txt*.
+DAF Gen is created via PySide6 framework and uses the PyAudio module for voice recording. All the necessary PIP dependencies are listed in *requirements.txt*.
 
-Build and run (on Windows machine):
+## Platform requirements
+### Linux
+Ubuntu 22.04.4:
 ```
-> python3 -m pip install -r requirements.txt
-> python3 dafgen.py
-```
-You can edit the Ui (*dafgen.ui*) with PyQt Designer as you like.
-
-Also it may be convenient to freeze the code into standalone executable. This could be done with *cx_Freeze*:
-```
-> python3 setup.py build
+$ sudo apt install git build-essential python3-dev python3.10-venv portaudio19-dev
 ```
 
-## Platform
-DAF Gen is developed and tested on Windows, but it is runnable on Linux systems as well. In this case you should manually resolve DEB dependencies first:
+### Windows:
 ```
-$ pip3 install pyaudio
-$ sudo apt-get install python3-pyqt5 pyqt5-dev-tools
+???
+```
+
+### MacOS:
+```
+???
+```
+
+## Build
+Build with venv:
+```
+$ git clone https://github.com/mike-teehan/daf-generator.git
+$ python3 -m venv daf-generator
+$ cd daf-generator
+$ . bin/activate
+$ python3 -m pip install -r requirements.txt
+```
+
+## Run
+Make sure the venv is already active, then run:
+```
+$ python3 dafgen.py
+```
+
+You can edit the Ui (**dafgen.ui**) with PyQt Designer as you like.  
+After editing **dafgen.ui**, use **pyside3-uic** to rebuild **ui_dafgen.py** with your changes:
+```
+$ pyside6-uic dafgen.ui > ui_dafgen.py
 ```
