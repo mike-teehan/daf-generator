@@ -26,14 +26,12 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 @endlicense
 """
 
-#from PyQt6.QtWidgets import *
-#from PyQt6.QtCore import *
 from PySide6.QtWidgets import *
 from PySide6.QtCore import *
 from ui_dafgen import Ui_DAFGen
 
 from pyaudio import PyAudio, paFloat32
-from math import floor
+from math import floor, ceil
 from time import perf_counter
 
 import sys
@@ -43,22 +41,31 @@ class Worker(QThread):
 
 	_trigger = Signal(float)
 
-	def __init__(self, bufferSize, streamIn, streamOut):
+	def __init__(self, bufferSize:int, ringSize:int, streamIn:PyAudio.Stream, streamOut:PyAudio.Stream) -> None:
 		QThread.__init__(self)
-		self._bufferSize = bufferSize
-		self._streamIn = streamIn
-		self._streamOut = streamOut
+		self._bufferSize:int = bufferSize
+		self._ringSize:int = ringSize
+		self._streamIn:int = streamIn
+		self._streamOut:int = streamOut
+		self._ring:list = [ None ] * ringSize
 
 	def __del__(self):
 		self.wait()
 
-	def _genDAF(self):
+	def _genDAF(self) -> None:
+		rp:int = 0
+		start:int = 0
 		while self._streamIn.is_active():
-			start = perf_counter()
-			audioData = self._streamIn.read(self._bufferSize)
-			self._streamOut.write(audioData)
-			actualDelay = perf_counter() - start
-			self._trigger.emit(actualDelay)
+			if not start:
+				start = perf_counter()
+			if self._ring[rp] != None:
+				self._streamOut.write(self._ring[rp])
+			self._ring[rp] = self._streamIn.read(self._bufferSize)
+			rp = (rp + 1) % self._ringSize
+			if rp == 0:
+				actualDelay = perf_counter() - start
+				self._trigger.emit(actualDelay)
+				start = 0
 
 	def run(self):
 		self._genDAF()
@@ -68,6 +75,8 @@ class MainApp(QMainWindow, Ui_DAFGen):
 
 	_CHANNELS = 2
 	_RATE = 44100
+	_BUFFERSIZE = 100
+	_BUFFERSPERSECOND = _RATE / _BUFFERSIZE
 
 	def __init__(self):
 		super().__init__()
@@ -86,7 +95,7 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		self.delayEdit.setPlainText(str(self.delaySlider.value()) + ' ms')
 
 	def _startCapture(self):
-		bufferSize = floor(self.delaySlider.value() / 1000 * self._RATE)
+		ringSize = round((self.delaySlider.value() / 1000) * self._BUFFERSPERSECOND)
 		device = PyAudio()
 
 		try:
@@ -95,7 +104,7 @@ class MainApp(QMainWindow, Ui_DAFGen):
 				channels=self._CHANNELS,
 				rate=self._RATE,
 				input=True,
-				frames_per_buffer=bufferSize
+				frames_per_buffer=self._BUFFERSIZE
 			)
 
 			streamOut = device.open(
@@ -103,14 +112,14 @@ class MainApp(QMainWindow, Ui_DAFGen):
 				channels=self._CHANNELS,
 				rate=self._RATE,
 				output=True,
-				frames_per_buffer=bufferSize
+				frames_per_buffer=self._BUFFERSIZE
 			)
 
 		except OSError as e:
 			QMessageBox.critical(self, 'Error', 'No input/output device found! Connect and rerun.')
 			return
 
-		self._workerThread = Worker(bufferSize, streamIn, streamOut)
+		self._workerThread = Worker(self._BUFFERSIZE, ringSize, streamIn, streamOut)
 		self._workerThread._trigger.connect(self._updateActualDelay)
 
 		self.startButton.setEnabled(False)
