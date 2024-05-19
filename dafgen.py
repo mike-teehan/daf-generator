@@ -89,7 +89,11 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		self.delaySlider.valueChanged.connect(self._updateDelay)
 		self.startButton.clicked.connect(self._startCapture)
 		self.stopButton.clicked.connect(self._stopCapture)
-		self.quitButton.clicked.connect(QApplication.quit)
+		self.quitButton.clicked.connect(self._quit)
+
+	def _quit(self):
+		self._stopCapture()
+		QApplication.quit()
 
 	def _updateDelay(self):
 		self.delayEdit.setPlainText(str(self.delaySlider.value()) + ' ms')
@@ -129,7 +133,8 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		self._workerThread.start()
 
 	def _stopCapture(self):
-		self._workerThread.terminate()
+		if self._workerThread:
+			self._workerThread.terminate()
 
 		self.actualDelayEdit.clear()
 		self.startButton.setEnabled(True)
@@ -140,6 +145,8 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		newValue = floor(t * 1000)
 		self.actualDelayEdit.setPlainText(str(newValue) + ' ms')
 
+	def closeEvent(self, event:QEvent):
+		self._quit()
 
 def main():
 	app = QApplication(sys.argv)
