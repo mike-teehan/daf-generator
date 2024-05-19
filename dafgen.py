@@ -40,38 +40,68 @@ import sys
 class Worker(QThread):
 
 	_trigger = Signal(float)
+	_ring:list = []
+	_pring:int = 0
+	_rscBuffer:float = 0.0
 
-	def __init__(self, bufferSize:int, ringSize:int, streamIn:PyAudio.Stream, streamOut:PyAudio.Stream) -> None:
+	def __init__(self, bufferSize:int, ringSize:int, streamIn:PyAudio.Stream, streamOut:PyAudio.Stream, ringSizeSignal:Signal) -> None:
 		QThread.__init__(self)
 		self._bufferSize:int = bufferSize
-		self._ringSize:int = ringSize
 		self._streamIn:int = streamIn
 		self._streamOut:int = streamOut
-		self._ring:list = [ None ] * ringSize
+		self._resizeRing(ringSize)
+		ringSizeSignal.connect(self.ringSizeChanged)
 
 	def __del__(self):
 		self.wait()
 
+	def ringSizeChanged(self, ringSize:int) -> None:
+		ts = perf_counter()
+		if self._rscBuffer > ts - 0.01:
+			return
+		self._resizeRing(ringSize)
+		self._rscBuffer = ts
+
+	def _resizeRing(self, ringSize:int) -> None:
+		sizeDiff:int = ringSize - len(self._ring)
+		if sizeDiff > 0:
+			self._ring = self._ring[:self._pring] + ([ None ] * sizeDiff) + self._ring[self._pring + 1:]
+		if sizeDiff < 0:
+			spaceAfter:int = len(self._ring) - self._pring
+			if spaceAfter > -sizeDiff:
+				self._ring = self._ring[:self._pring] + self._ring[self._pring + sizeDiff:]
+			else:
+				skipBefore = -sizeDiff - spaceAfter
+				self._ring = self._ring[skipBefore:self._pring]
+				self._decPRing(skipBefore + 1)
+
 	def _genDAF(self) -> None:
-		rp:int = 0
 		start:int = 0
 		while self._streamIn.is_active():
-			if not start:
+			if not start and self._pring == 0:
 				start = perf_counter()
-			if self._ring[rp] != None:
-				self._streamOut.write(self._ring[rp])
-			self._ring[rp] = self._streamIn.read(self._bufferSize)
-			rp = (rp + 1) % self._ringSize
-			if rp == 0:
+			if self._ring[self._pring] != None:
+				self._streamOut.write(self._ring[self._pring])
+			self._ring[self._pring] = self._streamIn.read(self._bufferSize)
+			self._incPRing(1)
+			if start and self._pring == 0:
 				actualDelay = perf_counter() - start
 				self._trigger.emit(actualDelay)
 				start = 0
+
+	def _incPRing(self, num:int) -> None:
+		self._pring = (self._pring + num) % len(self._ring)
+
+	def _decPRing(self, num:int) -> None:
+		self._pring = (self._pring - num) % len(self._ring)
 
 	def run(self):
 		self._genDAF()
 
 
 class MainApp(QMainWindow, Ui_DAFGen):
+
+	_ringSizeSignal = Signal(int)
 
 	_CHANNELS = 2
 	_RATE = 44100
@@ -83,7 +113,6 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		self.setupUi(self)
 
 		self.stopButton.setEnabled(False)
-		# _self.delaySlider.setValue(190)
 		self._updateDelay()
 
 		self.delaySlider.valueChanged.connect(self._updateDelay)
@@ -96,10 +125,15 @@ class MainApp(QMainWindow, Ui_DAFGen):
 		QApplication.quit()
 
 	def _updateDelay(self):
-		self.delayEdit.setPlainText(str(self.delaySlider.value()) + ' ms')
+		v = self.delaySlider.value()
+		self.delayEdit.setPlainText(f"{v} ms")
+		if 50 >= v >= 200:
+			return
+		ringSize = self._calcRingSize(v)
+		self._ringSizeSignal.emit(ringSize)
 
 	def _startCapture(self):
-		ringSize = round((self.delaySlider.value() / 1000) * self._BUFFERSPERSECOND)
+		ringSize = self._calcRingSize(self.delaySlider.value())
 		device = PyAudio()
 
 		try:
@@ -123,14 +157,16 @@ class MainApp(QMainWindow, Ui_DAFGen):
 			QMessageBox.critical(self, 'Error', 'No input/output device found! Connect and rerun.')
 			return
 
-		self._workerThread = Worker(self._BUFFERSIZE, ringSize, streamIn, streamOut)
+		self._workerThread = Worker(self._BUFFERSIZE, ringSize, streamIn, streamOut, self._ringSizeSignal)
 		self._workerThread._trigger.connect(self._updateActualDelay)
 
 		self.startButton.setEnabled(False)
-		self.delaySlider.setEnabled(False)
 		self.stopButton.setEnabled(True)
 
 		self._workerThread.start()
+
+	def _calcRingSize(self, ms: int) -> int:
+		return floor(round(ms / 1000 * self._BUFFERSPERSECOND))
 
 	def _stopCapture(self):
 		if self._workerThread:
@@ -138,7 +174,6 @@ class MainApp(QMainWindow, Ui_DAFGen):
 
 		self.actualDelayEdit.clear()
 		self.startButton.setEnabled(True)
-		self.delaySlider.setEnabled(True)
 		self.stopButton.setEnabled(False)
 
 	def _updateActualDelay(self, t):
